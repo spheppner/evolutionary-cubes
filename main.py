@@ -13,43 +13,41 @@ import random
 class Game:
     grid_size = 1 # should be 1 until we understand what it does
     fps = 60
-    grid_dim = 3 # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
+    grid_dim = 2 # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
     cube_to_grid_ratio = 0.95
-    max_swimmers = 20
+    max_swimmers = 10
     friction = 0.93
 
-    cubes = {}
-    cubelist = []  # for 3d grafik
-    plantlist = []
+    cubedict = {}
+    plantdict = {}
     particledict = {}
     swimmidict = {}
-
-    # TODO: plants, cubes -> zu subklassen umwandeln (vpython.cube, ...)
+    
     # TODO: compounds?
 
 
-class Plant():
+class Plant(vpython.simple_sphere):
     number = 0
 
-    def __init__(self, startpos, color=None, radius=None):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
         self.number = Plant.number
         Plant.number += 1
 
-        self.spawn_rate = 0.1
+        self.spawn_rate = 0.01
         self.spawn_speed = random.uniform(0.4,1.5)
 
-        self.startpos = startpos
-        self.color = color if color is not None else vp.vector(random.random(), random.random(), random.random())
-        self.radius = radius if radius is not None else random.random()
+        if "color" not in kwargs or kwargs["color"] is None:
+            self.color = vp.vector(random.random(), random.random(), random.random())
+        if "radius" not in kwargs or kwargs["radius"] is None:
+            self.radius = random.random()
 
-        Game.plantlist.append(self)
-
-        vp.simple_sphere(pos=self.startpos, color=self.color, radius=self.radius)
-        # TODO: age
+        Game.plantdict[self.number] = self
 
     def update(self):
         if random.random() < self.spawn_rate:
-            Particle(pos=self.startpos, color=self.color, radius=0.01, speed=self.spawn_speed)
+            Particle(pos=self.pos, color=self.color, radius=0.01, speed=self.spawn_speed)
 
 class Particle(vpython.simple_sphere):
     number = 0
@@ -63,7 +61,7 @@ class Particle(vpython.simple_sphere):
         self.axis = vpython.vector.random()
         self.speed = kwargs["speed"]
 
-        self.max_age = 15
+        self.max_age = 10
         self.age = 0
 
         Game.particledict[self.number] = self
@@ -76,19 +74,17 @@ class Particle(vpython.simple_sphere):
         if self.age > self.max_age:
             self.visible = False
 
-class Cube():
+class Cube(vpython.box):
     """basically an aquarium for swimmies with own enviroment"""
     number = 0
 
-    def __init__(self, pos, size, color, opacity):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
         self.number = Cube.number
         Cube.number += 1
-        Game.cubes[self.number] = self
-
-        self.pos = pos
-        self.size = size
-        self.color = color
-        self.opacity = opacity
+        
+        Game.cubedict[self.number] = self
 
 
     @property
@@ -189,8 +185,8 @@ class Swimmi(vpython.cone):
         if (newpos.z > Game.grid_dim * Game.grid_size - Game.grid_size / 2) or (newpos.z < - Game.grid_size / 2):
             mz *= -1
         # reflect from plant
-        for p in Game.plantlist:
-            distance = self.pos-p.startpos
+        for p in Game.plantdict.values():
+            distance = self.pos-p.pos
             if distance.mag < p.radius:
                 mx *= -1
                 my *= -1
@@ -221,32 +217,23 @@ def create_cubes():
                        color=vp.vector(0.75,0.75,0.75),
                        opacity=0.15,
                        )
-                Plant(startpos=vp.vector(x,y,z), radius = Game.grid_size * Game.cube_to_grid_ratio/10)
-
-    for cube in Game.cubes.values():
-        Game.cubelist.append(vp.box(pos=cube.pos, size=cube.size, color=cube.color, opacity=cube.opacity))
+                Plant(pos=vp.vector(x,y,z), radius=Game.grid_size*Game.cube_to_grid_ratio/10)
 
 def display():
     for swimmi in Game.swimmidict.values():
         swimmi.update()
     for particili in Game.particledict.values():
         particili.update()
+    for plant in Game.plantdict.values():
+        plant.update()
+    for cube in Game.cubedict.values():
+        cube.change_color()
 
     # kill dead stuff
     for mydict in [Game.swimmidict, Game.particledict]:
         for dead_thing in [item for item in mydict.values() if item.age > item.max_age]:
             del mydict[dead_thing.number]
             del dead_thing
-
-    for plant in Game.plantlist:
-        plant.update()
-
-    for cube in Game.cubes.values():
-        cube.change_color()
-        Game.cubelist[cube.number].color = cube.color
-
-
-
 
 def main():
     create_world()
