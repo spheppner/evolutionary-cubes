@@ -12,17 +12,20 @@ import random
 
 class Game:
     grid_size = 1 # should be 1 until we understand what it does
-    dt = 1/100
-    grid_dim = 4 # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
+    fps = 60
+    grid_dim = 3 # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
     cube_to_grid_ratio = 0.95
-    max_swimmers = 10
-    swimmers = {} # python objects
+    max_swimmers = 20
+    friction = 0.93
+
     cubes = {}
     cubelist = []  # for 3d grafik
     plantlist = []
     particledict = {}
-    particlelist = []
-    swimmlist = [] # spriteliste for representation
+    swimmidict = {}
+
+    # TODO: plants, cubes -> zu subklassen umwandeln (vpython.cube, ...)
+    # TODO: compounds?
 
 
 class Plant():
@@ -33,7 +36,7 @@ class Plant():
         Plant.number += 1
 
         self.spawn_rate = 0.1
-        self.spawn_speed = random.uniform(0.1,1.5)
+        self.spawn_speed = random.uniform(0.4,1.5)
 
         self.startpos = startpos
         self.color = color if color is not None else vp.vector(random.random(), random.random(), random.random())
@@ -46,31 +49,32 @@ class Plant():
 
     def update(self):
         if random.random() < self.spawn_rate:
-            Particle(startpos=self.startpos, color=self.color, radius=0.01, speed=self.spawn_speed)
+            Particle(pos=self.startpos, color=self.color, radius=0.01, speed=self.spawn_speed)
 
-class Particle():
+class Particle(vpython.simple_sphere):
     number = 0
 
-    def __init__(self, startpos, color=None, radius=None, speed=None):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
         self.number = Particle.number
         Particle.number += 1
 
-        self.move = vp.vector.random()
-        self.startpos = startpos
-        self.speed = speed if speed is not None else random.random()
-        self.color = color if color is not None else vp.vector(random.random(), random.random(), random.random())
-        self.radius = radius if radius is not None else random.random()
+        self.axis = vpython.vector.random()
+        self.speed = kwargs["speed"]
 
-        self.friction = 0.93
-
-        self.max_age = 500
+        self.max_age = 15
         self.age = 0
 
         Game.particledict[self.number] = self
 
     def update(self):
-        self.startpos += self.move * self.speed * Game.dt
-        self.speed *= self.friction
+        self.pos += self.axis * self.speed * 1/Game.fps
+        self.speed *= Game.friction
+
+        self.age += 1/Game.fps
+        if self.age > self.max_age:
+            self.visible = False
 
 class Cube():
     """basically an aquarium for swimmies with own enviroment"""
@@ -90,7 +94,7 @@ class Cube():
     @property
     def amount_of_swimmies(self):
         amount = 0
-        for swimmy in Game.swimmers.values():
+        for swimmy in Game.swimmidict.values():
             if abs(swimmy.pos.x - self.pos.x) < (self.size.x / 2):
                 if abs(swimmy.pos.y - self.pos.y) < (self.size.y / 2):
                     if abs(swimmy.pos.z - self.pos.z) < (self.size.z / 2):
@@ -98,49 +102,101 @@ class Cube():
         return amount
 
     def change_color(self):
-        # the more swimmies in me, the redder i become
-        total = len(Game.swimmers)
-        mine = self.amount_of_swimmies
-        self.color = vp.vector(mine/total, self.color.y, self.color.z)
+        if len(Game.swimmidict) > 0:
+            # the more swimmies in me, the redder i become
+            total = len(Game.swimmidict)
+            mine = self.amount_of_swimmies
+            self.color = vp.vector(mine/total, self.color.y, self.color.z)
 
-class Swimmer():
+
+class Swimmi(vpython.cone):
+
     number = 0
+    max_speed = 0.75
+    min_speed = 0.01
+    turn_speed = 90 # degrees / second
 
-    def __init__(self):
-        self.number = Swimmer.number
-        Swimmer.number +=1
-        Game.swimmers[self.number] = self
-        self.hp = 100
-        self.hp_max = 100
-        self.speed = 5
-        #self.hunger = 0
-        self.energy = 100
-        #self._color = 0
-        self.pos = vp.vector(0.5,0.5,0.5)
+    def __init__(self, **kwargs):
+        #for k, v in kwargs.items():
+        if "pos" not in kwargs or kwargs["pos"] is None:
+            # if (newpos.x > Game.grid_dim * Game.grid_size - Game.grid_size / 2) or (newpos.x < - Game.grid_size / 2):
+            kwargs["pos"] = vpython.vector(random.uniform(-Game.grid_size/2, Game.grid_dim*Game.grid_size-Game.grid_size/2),
+                                           random.uniform(-Game.grid_size/2, Game.grid_dim*Game.grid_size-Game.grid_size/2),
+                                           random.uniform(-Game.grid_size/2, Game.grid_dim*Game.grid_size-Game.grid_size/2),
+                                           )
+        if "axis" not in kwargs or kwargs["axis"] is None:
+            kwargs["axis"] = vpython.norm(vpython.vector.random()) * 0.07
+        # overwrite radius with 0.1
+        kwargs["radius"] = 0.03
+        super().__init__(**kwargs)
+        print("Ich bin ein Swimmi")
+        self.number = Swimmi.number
+        Swimmi.number += 1
+        Game.swimmidict[self.number] = self
+        self.age = 0
+        self.angle = 0
+        self.max_age = random.uniform(500, 500)
+        self.speed = random.uniform(Swimmi.min_speed,Swimmi.max_speed)
+        self.nervousness = random.random() + 0.01
+        self.iwanttogothere = vpython.vector.random()
 
-    @property
-    def color(self):
-        return vp.vector(   1 - (self.hp / self.hp_max), self.hp / self.hp_max,  0 )
+    def update(self):
+        # change speed
+        self.speed += random.uniform(-0.01, 0.01)
+        self.speed = max(Swimmi.min_speed, self.speed)
+        self.speed = min(self.speed, Swimmi.max_speed)
+        self.reflect()
+        self.pos += vpython.norm(self.axis) * self.speed * 1/Game.fps
+        # aging
+        self.age += 1/Game.fps
+        if self.age > self.max_age:
+            # kill correctly
+            self.visible = False
+        # rotating randomly
+        self.pitchaxis = vpython.cross(self.axis, self.up)
+        rot_axis = random.choice([self.axis, self.up, self.pitchaxis])
+        self.angle += random.uniform(-0.1,0.1)
+        if random.random() < self.nervousness:
+            self.iwanttogothere = vpython.vector.random()
+        diff_angle = vpython.diff_angle(self.axis, self.iwanttogothere)
+        if diff_angle > 0:
+            for axis in [self.axis, self.up, self.pitchaxis]:
+                axisleft = self.axis.rotate(angle=vpython.radians(self.turn_speed * 1/60), axis=axis)
+                resultleft = vpython.diff_angle(axisleft, self.iwanttogothere)
+                axisright = self.axis.rotate(angle=vpython.radians(-self.turn_speed * 1 / 60), axis=axis)
+                resultright = vpython.diff_angle(axisright, self.iwanttogothere)
 
-    @property
-    def move(self):
-        mx = random.uniform(-1,1)
-        my = random.uniform(-1,1)
-        mz = random.uniform(-1,1)
-             #            ) # -1..1,  -1..1, -1..1
-        #print(mx, my, mz, self.pos, self.speed, Game.dt)
-        new_pos = self.pos + vp.vector(mx, my,mz)  * self.speed * Game.dt
-        #         0                    1
-        #    -0.5bis0.5          0.5 bis 1.5
-        # bounce if reaching outer aquariums wall
-        if (new_pos.x > Game.grid_dim * Game.grid_size  - Game.grid_size/2) or (new_pos.x < - Game.grid_size/2) :
+                if resultleft < resultright:
+                    angle = 1
+                elif resultleft > resultright:
+                    angle = -1
+                else:
+                    angle = 0
+                if angle != 0:
+                    self.rotate(angle=vpython.radians(angle * self.turn_speed * 1/60), axis=axis)
+
+    def reflect(self):
+        m = self.axis
+        mx = m.x
+        my = m.y
+        mz = m.z
+        newpos = self.pos + vpython.norm(self.axis) * self.speed * 1 / Game.fps
+        # reflect from edge of universe
+        if (newpos.x > Game.grid_dim * Game.grid_size - Game.grid_size / 2) or (newpos.x < - Game.grid_size / 2):
             mx *= -1
-        if (new_pos.y > Game.grid_dim * Game.grid_size  - Game.grid_size/2) or (new_pos.y < - Game.grid_size/2) :
+        if (newpos.y > Game.grid_dim * Game.grid_size - Game.grid_size / 2) or (newpos.y < - Game.grid_size / 2):
             my *= -1
-        if (new_pos.z > Game.grid_dim * Game.grid_size  - Game.grid_size/2) or (new_pos.z < - Game.grid_size/2):
+        if (newpos.z > Game.grid_dim * Game.grid_size - Game.grid_size / 2) or (newpos.z < - Game.grid_size / 2):
             mz *= -1
-        return vp.vector(mx, my, mz)
-
+        # reflect from plant
+        for p in Game.plantlist:
+            distance = self.pos-p.startpos
+            if distance.mag < p.radius:
+                mx *= -1
+                my *= -1
+                mz *= -1
+                break
+        self.axis = vpython.vector(mx, my, mz)
 
 def create_world():
     xarrow = vp.arrow(pos=vp.vector(0,0,0), axis=vp.vector(1,0,0), color=vp.vector(1,0,0))  # red
@@ -151,10 +207,7 @@ def create_world():
     zlabel = vp.label(pos=zarrow.pos + zarrow.axis, color=zarrow.color, text="z")
 
     for x in range(Game.max_swimmers):
-        Swimmer()
-
-
-
+        Swimmi()
 
 def create_cubes():
     for x in range(0, Game.grid_dim, Game.grid_size):
@@ -173,47 +226,25 @@ def create_cubes():
     for cube in Game.cubes.values():
         Game.cubelist.append(vp.box(pos=cube.pos, size=cube.size, color=cube.color, opacity=cube.opacity))
 
-
-
 def display():
-    # clear spritelist
-    for sprite in Game.swimmlist:
-        sprite.visible = False
-        sprite.delete()
-    Game.swimmlist = [] # empty the list
-    # wait display to have time for updates
+    for swimmi in Game.swimmidict.values():
+        swimmi.update()
+    for particili in Game.particledict.values():
+        particili.update()
 
-
-    # update python objects
-    for swimmy in Game.swimmers.values():
-        swimmy.pos += swimmy.move * swimmy.speed * Game.dt
-
-        Game.swimmlist.append(vp.simple_sphere(pos=swimmy.pos, color=swimmy.color, radius=0.02))
-    for cube in Game.cubes.values():
-        cube.change_color()
-        Game.cubelist[cube.number].color = cube.color
-
-    for sprite in Game.particlelist:
-        sprite.visible = False
-        sprite.delete()
-    Game.particlelist = [] # empty the list
-
-    marked_to_kill = []
-    for particle in Game.particledict.values():
-        particle.age += 1
-        if particle.age > particle.max_age:
-            #del Game.particledict[particle.number]
-            marked_to_kill.append(particle.number)
-        else:
-            particle.update()
-            Game.particlelist.append(vp.simple_sphere(pos=particle.startpos, color=particle.color, radius=particle.radius))
-    for nr in marked_to_kill:
-        del Game.particledict[nr]
+    # kill dead stuff
+    for mydict in [Game.swimmidict, Game.particledict]:
+        for dead_thing in [item for item in mydict.values() if item.age > item.max_age]:
+            del mydict[dead_thing.number]
+            del dead_thing
 
     for plant in Game.plantlist:
         plant.update()
 
-    vp.sleep(Game.dt)
+    for cube in Game.cubes.values():
+        cube.change_color()
+        Game.cubelist[cube.number].color = cube.color
+
 
 
 
@@ -223,6 +254,7 @@ def main():
 
     # update swimmies
     while True:
+        vp.rate(Game.fps)
         display()
 
 
