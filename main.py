@@ -19,6 +19,8 @@ class Game:
     cube_to_grid_ratio = 0.95
     max_swimmers = 10
     friction = 0.93
+    
+    trails = True
 
     cubedict = {}
     plantdict = {}
@@ -125,15 +127,18 @@ class Swimmi(vpython.cone):
                 )
         if "axis" not in kwargs or kwargs["axis"] is None:
             kwargs["axis"] = vpython.norm(vpython.vector.random()) * 0.07
-        # overwrite radius with 0.1
+        # overwrite radius with 0.03
         kwargs["radius"] = 0.03
-        # overwrite non-existing trail
-        kwargs["make_trail"] = True
-        kwargs["trail_type"] = "curve"
-        # use either interval or pps
-        #kwargs["interval"] = 10
-        kwargs["pps"] = 15 # for curve only, if no interval is given, add 15 trail points per second
-        kwargs["retain"] = 15
+        
+        # only make trail if Game.trails is True
+        if Game.trails:
+            kwargs["make_trail"] = True
+            kwargs["trail_type"] = "curve"
+            # use either interval or pps
+            #kwargs["interval"] = 10
+            kwargs["pps"] = 15 # for curve only, if no interval is given, add 15 trail points per second
+            kwargs["retain"] = 15
+            
         super().__init__(**kwargs)
 
         print("Ich bin ein Swimmi")
@@ -251,9 +256,12 @@ def display():
 
 
 def main():
+	# toggle all trails with this variable
+    Game.trails = False
+	
     create_world()
     create_cubes()
-
+    
     # update swimmies
     while True:
         vp.rate(Game.fps)
