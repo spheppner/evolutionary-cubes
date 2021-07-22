@@ -13,14 +13,16 @@ import random
 #    print(f'Hi, {name}')  # Press Strg+F8 to toggle the breakpoint.
 
 class Game:
+    scene1 = vpython.canvas(width=800, height=600, title='Simons wonderful water world')
     grid_size = 1  # should be 1 until we understand what it does
     fps = 60
     grid_dim = 2  # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
     cube_to_grid_ratio = 0.95
     max_swimmers = 10
     friction = 0.93
-    
-    trails = True
+    show_trail = False
+    retain = 30 # for trails
+    pps = 15    # for trails (currently not implimented)
 
     cubedict = {}
     plantdict = {}
@@ -110,11 +112,18 @@ class Cube(vpython.box):
             self.color = vp.vector(mine / total, self.color.y, self.color.z)
 
 
-class Swimmi(vpython.cone):
+class Swimmi(vpython.compound):
     number = 0
     max_speed = 0.75
     min_speed = 0.01
     turn_speed = 90  # degrees / second
+    cone_radius = 0.03 # for cone (body)
+    cone_length = 0.17 # for cone (body)
+    wing_height = 0.01 # for
+    wing_to_cone_length = 1.0   # 1.0
+    wing_to_cone_width = 0.4    # 0.4
+    wing_to_cone_root = 0.9     # 0.2
+
 
     def __init__(self, **kwargs):
         # for k, v in kwargs.items():
@@ -124,22 +133,28 @@ class Swimmi(vpython.cone):
                 random.uniform(-Game.grid_size / 2, Game.grid_dim * Game.grid_size - Game.grid_size / 2),
                 random.uniform(-Game.grid_size / 2, Game.grid_dim * Game.grid_size - Game.grid_size / 2),
                 random.uniform(-Game.grid_size / 2, Game.grid_dim * Game.grid_size - Game.grid_size / 2),
-                )
+            )
         if "axis" not in kwargs or kwargs["axis"] is None:
             kwargs["axis"] = vpython.norm(vpython.vector.random()) * 0.07
         # overwrite radius with 0.03
-        kwargs["radius"] = 0.03
-        
+        #kwargs["radius"] = 0.03
+
         # only make trail if Game.trails is True
-        if Game.trails:
-            kwargs["make_trail"] = True
-            kwargs["trail_type"] = "curve"
-            # use either interval or pps
-            #kwargs["interval"] = 10
-            kwargs["pps"] = 15 # for curve only, if no interval is given, add 15 trail points per second
-            kwargs["retain"] = 15
-            
-        super().__init__(**kwargs)
+        #if Game.trails:
+        kwargs["make_trail"] = False
+        kwargs["trail_type"] = "curve"
+        # use either interval or pps
+        # kwargs["interval"] = 10
+        kwargs["pps"] = Game.pps  # for curve only, if no interval is given, add 15 trail points per second
+        kwargs["retain"] = Game.retain
+        # create sub-components for compound object
+        body = vpython.cone(pos=vpython.vector(0, 0, 0), axis=vpython.vector(Swimmi.cone_length, 0, 0), radius=Swimmi.cone_radius)
+        wing1 = vpython.box(pos=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_root , 0, 0), axis=body.axis, size=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_width, Swimmi.cone_length * Swimmi.wing_to_cone_length, Swimmi.wing_height))
+        wing1.rotate(vpython.radians(15), axis=body.axis)
+        wing2 = vpython.box(pos=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_root , 0, 0), axis=body.axis, size=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_width, Swimmi.cone_length * Swimmi.wing_to_cone_length, Swimmi.wing_height))
+        wing2.rotate(vpython.radians(-15), axis=body.axis)
+
+        super().__init__([body, wing1, wing2], **kwargs)
 
         print("Ich bin ein Swimmi")
         self.number = Swimmi.number
@@ -153,6 +168,11 @@ class Swimmi(vpython.cone):
         self.iwanttogothere = vpython.vector.random()
 
     def update(self):
+        # hide/show trail
+        self.make_trail = Game.show_trail
+        if self.make_trail:
+            #self.pps = Game.pps
+            self.retain = Game.retain
         # change speed
         self.speed += random.uniform(-0.01, 0.01)
         self.speed = max(Swimmi.min_speed, self.speed)
@@ -210,7 +230,37 @@ class Swimmi(vpython.cone):
                 break
         self.axis = vpython.vector(mx, my, mz)
 
+def create_widgets():
 
+
+    vpython.checkbox(bind=toggle_trail, text='show trails for swimmies   ')  # text to right of checkbox
+    #vpython.wtext(text="pps:")
+    #vpython.slider(bind=change_pps, min=0.5, max=30)
+    #Game.pps_text = vpython.wtext(text=Game.pps)
+    vpython.wtext(text="retain: ")
+    vpython.slider(bind=change_retain, text="retain", min=1, max=60, value=30)
+    vpython.wtext(text="   ")
+    Game.retain_text = vpython.wtext(text=Game.retain)
+    Game.scene1.append_to_caption('\n\n')
+## --------- functions for widget functionality -------------
+def toggle_trail(cross):
+    if not cross.checked:
+        # remove all existing trails
+        for swimmi in Game.swimmidict.values():
+            swimmi.clear_trail()
+
+    Game.show_trail = cross.checked
+
+def change_pps(slide):
+    # currently off duty
+    Game.pps = slide.value
+    Game.pps_text.text = f"{slide.value:.2f}"
+
+def change_retain(slide):
+    Game.retain = slide.value
+    Game.retain_text.text= f"{slide.value:.2f}"
+
+# ------------- end of widget functions ---------------------
 def create_world():
     xarrow = vp.arrow(pos=vp.vector(0, 0, 0), axis=vp.vector(1, 0, 0), color=vp.vector(1, 0, 0))  # red
     yarrow = vp.arrow(pos=vp.vector(0, 0, 0), axis=vp.vector(0, 1, 0), color=vp.vector(0, 1, 0))  # green
@@ -256,12 +306,12 @@ def display():
 
 
 def main():
-	# toggle all trails with this variable
-    Game.trails = False
-	
+    # toggle all trails with this variable
+    #Game.trails = False
+    create_widgets()
     create_world()
     create_cubes()
-    
+
     # update swimmies
     while True:
         vp.rate(Game.fps)
