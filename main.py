@@ -243,6 +243,13 @@ def main():
     while True:
         vp.rate(Game.fps)
         display()
+        
+        keys = keysdown()
+        
+        if "t" in keys:
+            for swimmi in swimmidict.values():
+                if swimmidict.make_trail is True: swimmidict.make_trail = False
+                if swimmidict.make_trail is False: swimmidict.make_trail = True
 
 
 
