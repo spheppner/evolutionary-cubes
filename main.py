@@ -13,11 +13,19 @@ import random
 #    print(f'Hi, {name}')  # Press Strg+F8 to toggle the breakpoint.
 
 class Game:
-    scene1 = vpython.canvas(width=1400, height=800, title='Simons wonderful water world')
-    grid_size = 1  # should be 1 until we understand what it does
+    scene1 = vpython.canvas(width=1400, height=800, title='Simons wonderful water world', align="left")
+    grid_size = 1  # how big a cube is
     fps = 60
-    grid_dim = 2  # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
+    grid_dim = 4  # 1 = 1 cube, 2 = 2x2x2 cubes, 3=3x3x3 cubes...
     cube_to_grid_ratio = 0.95
+
+    auto_rotate = False
+    center_coordinates = vpython.vector((grid_dim-1)/2,
+                                        (grid_dim-1)/2,
+                                        (grid_dim-1)/2)
+    scene1.center = center_coordinates
+    forwardarrow = vpython.arrow(pos=center_coordinates, axis=-scene1.forward, visible=False)
+
     max_swimmers = 10
     friction = 0.93
     show_arrows = False
@@ -76,6 +84,8 @@ class Particle(vpython.simple_sphere):
 
         self.axis = vpython.vector.random()
         self.speed = kwargs["speed"]
+
+        self.nutrient_value = random.uniform(0.01,0.5)
 
         self.max_age = 10
         self.age = 0
@@ -165,15 +175,18 @@ class Swimmi(vpython.compound):
         wing2 = vpython.box(pos=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_root , 0, 0), axis=body.axis, size=vpython.vector(Swimmi.cone_length * Swimmi.wing_to_cone_width, Swimmi.cone_length * Swimmi.wing_to_cone_length, Swimmi.wing_height))
         wing2.rotate(vpython.radians(-Swimmi.wing_angle), axis=body.axis)
 
+        self.sniff_range = random.uniform(Swimmi.cone_length * 2, Swimmi.cone_length * 5)
+        # , vpython.simple_sphere(radius=self.sniff_range, opacity=0.25)
         super().__init__([body, wing1, wing2], **kwargs)
-
-
+        self.eat_range = Swimmi.cone_length*1.5
         print("Ich bin ein Swimmi")
         self.number = Swimmi.number
         Swimmi.number += 1
         Game.swimmidict[self.number] = self
         self.age = 0
         self.angle = 0
+        self.hunger = 1
+        self.hungerlabel = vpython.label(text=self.hunger)
         #self.max_age = random.uniform(500, 500)
         self.speed = random.uniform(Swimmi.min_speed, Swimmi.max_speed)
         self.nervousness = 0.25 # how often per second to change whereiwanttogo 1 = every second, 2= twice per second, 0.1 = all 10 seconds
@@ -186,6 +199,13 @@ class Swimmi(vpython.compound):
         self.target_destination = Game.random_point()
 
     def update(self):
+        foundparticles = self.sniff_particles(self.sniff_range)
+        #if self.hunger > 0:
+        if len(foundparticles) > 0:
+            self.target_destination = Game.particledict[random.choice(foundparticles)].pos
+        #else:
+        #    if random.random() < self.nervousness / Game.fps:
+        #        self.target_destination = Game.random_point()
         # hide/show trail
         self.make_trail = Game.show_trail
         if self.make_trail:
@@ -197,6 +217,13 @@ class Swimmi(vpython.compound):
         self.speed = min(self.speed, Swimmi.max_speed)
         self.reflect()
         self.pos += vpython.norm(self.axis) * self.speed * 1 / Game.fps
+        # hungryyy
+        self.hunger += self.speed * 1/Game.fps
+        # eating
+        foundparticles = self.sniff_particles(self.eat_range)
+        for particle_num in foundparticles:
+            Game.particledict[particle_num].age = Game.particledict[particle_num].max_age
+            self.hunger -= Game.particledict[particle_num].nutrient_value
         # aging
         if self.max_age is not None:
             self.age += 1 / Game.fps
@@ -207,8 +234,7 @@ class Swimmi(vpython.compound):
         self.pitchaxis = vpython.cross(self.axis, self.up)
         rot_axis = random.choice([self.axis, self.up, self.pitchaxis])
         self.angle += random.uniform(-0.1, 0.1)
-        if random.random() < self.nervousness / Game.fps:
-            self.target_destination = Game.random_point()
+
         self.iwanttogothere = self.target_destination - self.pos # update constantly
         diff_angle = vpython.diff_angle(self.axis, self.iwanttogothere)
         if diff_angle > 0:
@@ -226,6 +252,16 @@ class Swimmi(vpython.compound):
                     angle = 0
                 if angle != 0:
                     self.rotate(angle=vpython.radians(angle * self.turn_speed * 1 / 60), axis=axis)
+        self.arrow.color = vpython.vector(0 if self.hunger < 0 else 1, 0, 0 if self.hunger > 0 else 1)
+        self.hungerlabel.pos = self.pos
+        self.hungerlabel.text = self.hunger
+
+    def sniff_particles(self, radius):
+        foundparticles = []
+        for particle in Game.particledict.values():
+            if vpython.mag(particle.pos- self.pos) < radius:
+                foundparticles.append(particle.number)
+        return foundparticles
 
     def reflect(self):
         m = self.axis
@@ -253,21 +289,34 @@ class Swimmi(vpython.compound):
 def create_widgets():
 
     # ---------- trail control ------------
-    vpython.checkbox(bind=toggle_trail, text='show trails for swimmies   ')  # text to right of checkbox
+    vpython.wtext(text="<br><br>       Toggle Trails:   ")
+    vpython.checkbox(bind=toggle_trail, text='')  # text to right of checkbox
     #vpython.wtext(text="pps:")
     #vpython.slider(bind=change_pps, min=0.5, max=30)
     #Game.pps_text = vpython.wtext(text=Game.pps)
-    vpython.wtext(text="retain: ")
+    vpython.wtext(text="<br><br>       Retain:   ")
     vpython.slider(bind=change_retain, text="retain", min=1, max=60, value=30)
-    vpython.wtext(text="   ")
     Game.retain_text = vpython.wtext(text=Game.retain)
-    Game.scene1.append_to_caption('\n\n')
     # ------ where i want to go arrow control ------
-    vpython.checkbox(bind=toggle_arrows, text="show 'where i want to go' arrows", value=True)
+    vpython.wtext(text="<br><br>       Toggle Arrows:   ")
+    vpython.checkbox(bind=toggle_arrows, text="")
+
+    vpython.wtext(text="<br><br>       Toggle Auto Rotate:   ")
+    vpython.checkbox(bind=toggle_auto_rotate, text="")
+
     Game.scene1.append_to_caption('\n\n')
 
 
 ## --------- functions for widget functionality -------------
+
+def toggle_auto_rotate(checkbox):
+    Game.auto_rotate = checkbox.checked
+    if checkbox.checked:
+        Game.scene1.userspin = False
+        Game.scene1.userzoom = False
+    else:
+        Game.scene1.userspin = True
+        Game.scene1.userzoom = True
 
 def toggle_arrows(cross):
     Game.show_arrows = cross.checked
@@ -312,6 +361,8 @@ def create_world():
         s.arrow = vpython.attach_arrow(s, "iwanttogothere", scale=1.0, color=vpython.vector(0, 0, 1),
                          shaftwidth=Swimmi.cone_length / 4)
         s.arrow.stop()
+    Game.scene1.autoscale = False
+
 
 def create_cubes():
     for x in range(0, Game.grid_dim, Game.grid_size):
@@ -347,6 +398,15 @@ def display():
         for swimmi in [item for item in Game.swimmidict.values() if item.age > item.max_age]:
             del Game.swimmidict[swimmi.number]
             del swimmi
+
+    if Game.auto_rotate:
+        #Game.scene1.forward.rotate(angle=vpython.radians(15)*1/Game.fps, axis=vpython.vector(0,1,0), origin=Game.center_coordinates)
+        Game.forwardarrow.rotate(origin=Game.center_coordinates,
+                                 angle=vpython.radians(15) * 1/Game.fps,
+                                 axis = Game.scene1.up
+                                 )
+        Game.scene1.camera.pos = Game.center_coordinates + vpython.norm(Game.forwardarrow.axis) * vpython.mag(Game.scene1.camera.axis)
+        Game.scene1.camera.axis = Game.center_coordinates - Game.scene1.camera.pos
     #for mydict in [Game.swimmidict, Game.particledict]:
     #
     #    for dead_thing in [item for item in mydict.values() if item.age > item.max_age]:
